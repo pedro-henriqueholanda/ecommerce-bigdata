@@ -1,0 +1,153 @@
+# Ambiente completo em um só host. Precisa de ~10 GB de RAM livres para o Docker.
+name: ecommerce-bigdata
+
+services:
+  # ---------------------------------------------------------------- HDFS
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop2.7.4-java8
+    platform: linux/amd64
+    container_name: namenode
+    env_file: ./docker/hadoop-hive.env
+    environment:
+      CLUSTER_NAME: ecommerce
+    volumes:
+      - namenode:/hadoop/dfs/name
+    ports:
+      - "50070:50070"   # UI do HDFS
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop2.7.4-java8
+    platform: linux/amd64
+    container_name: datanode
+    env_file: ./docker/hadoop-hive.env
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070"
+    volumes:
+      - datanode:/hadoop/dfs/data
+    ports:
+      - "50075:50075"
+
+  # ---------------------------------------------------------------- Hive
+  hive-metastore-postgresql:
+    image: bde2020/hive-metastore-postgresql:2.3.0
+    platform: linux/amd64
+    container_name: hive-metastore-postgresql
+
+  hive-metastore:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    platform: linux/amd64
+    container_name: hive-metastore
+    env_file: ./docker/hadoop-hive.env
+    command: /opt/hive/bin/hive --service metastore
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075 hive-metastore-postgresql:5432"
+    ports:
+      - "9083:9083"
+
+  hive-server:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    platform: linux/amd64
+    container_name: hive-server
+    env_file: ./docker/hadoop-hive.env
+    environment:
+      HIVE_CORE_CONF_javax_jdo_option_ConnectionURL: "jdbc:postgresql://hive-metastore/metastore"
+      SERVICE_PRECONDITION: "hive-metastore:9083"
+    ports:
+      - "10000:10000"
+
+  # ---------------------------------------------------------------- Kafka (buffer Flume -> Flink)
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+
+  # ---------------------------------------------------------------- HBase (standalone + ZooKeeper embutido)
+  hbase:
+    image: harisekhon/hbase:2.1
+    platform: linux/amd64
+    container_name: hbase
+    hostname: hbase
+    ports:
+      - "16010:16010"   # UI do HBase Master
+
+  # ---------------------------------------------------------------- Flink
+  jobmanager:
+    build: ./docker/flink
+    image: ecommerce-flink:1.17.2
+    container_name: jobmanager
+    command: jobmanager
+    ports:
+      - "8081:8081"     # UI do Flink
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        jobmanager.memory.process.size: 1024m
+    volumes:
+      - ./flink:/opt/jobs
+
+  taskmanager:
+    image: ecommerce-flink:1.17.2
+    container_name: taskmanager
+    command: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 1728m
+    volumes:
+      - ./flink:/opt/jobs
+
+  # ---------------------------------------------------------------- Spark (modo local, fica "parado" esperando spark-submit)
+  spark:
+    image: spark:3.5.1-python3
+    container_name: spark
+    user: root
+    command: ["tail", "-f", "/dev/null"]
+    environment:
+      HADOOP_USER_NAME: root
+    ports:
+      - "4040:4040"     # UI do Spark (enquanto o job roda)
+    volumes:
+      - ./spark:/opt/jobs
+
+  # ---------------------------------------------------------------- Ingestão
+  flume:
+    build: ./docker/flume
+    platform: linux/amd64
+    container_name: flume
+    env_file: ./docker/hadoop-hive.env
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075 kafka:9092"
+    volumes:
+      - ./flume:/opt/flume-conf
+      - ./data/logs:/data/logs
+      - ./data/flume:/data/flume
+
+  gerador:
+    image: python:3.11-slim
+    container_name: gerador
+    working_dir: /app
+    command: ["python", "-u", "gerador.py", "--saida", "/data/logs/events.log", "--eps", "20"]
+    volumes:
+      - ./gerador:/app
+      - ./data/logs:/data/logs
+
+volumes:
+  namenode:
+  datanode:
