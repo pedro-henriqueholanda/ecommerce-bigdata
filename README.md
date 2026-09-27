@@ -62,7 +62,7 @@ Interfaces: HDFS `http://localhost:50070` · Flink `http://localhost:8081` · HB
 
 O job imprime `rdd.toDebugString()`, onde aparece o `ShuffledRDD` — evidência visual da wide dependency.
 
-## Decisões técnicas (base para o vídeo)
+## Decisões técnicas
 
 - **Por que Flink e não só Spark Streaming?** Flink processa evento a evento (latência de milissegundos) e foi desenhado em torno de *event time*: watermarks, janelas deslizantes e tratamento de atraso são nativos. O Spark Structured Streaming trabalha em micro-batches (latência de segundos) — bom, mas o Spark foi usado onde ele brilha: processar grandes volumes históricos em lote.
 - **Por que HBase e não só HDFS?** HDFS é otimizado para arquivos grandes, escrita sequencial e leitura em varredura; não permite buscar ou atualizar uma linha por chave rapidamente. Os alertas precisam de escrita contínua e consulta pontual ("quais alertas o usuário U00123 teve?") — exatamente o acesso por rowkey do HBase. O rowkey `user_id#janela` agrupa os alertas de um usuário.
@@ -72,15 +72,6 @@ O job imprime `rdd.toDebugString()`, onde aparece o `ShuffledRDD` — evidência
 - **Trade-off do watermark:** 10 s = equilíbrio entre latência (resultado sai 10 s depois do fim da janela) e completude (eventos com até 10 s de atraso são contados). O gerador manda atrasos de 2 a 30 s de propósito, então parte é descartada — mostra o custo da escolha.
 - **Janelas curtas (2–3 min):** escolhidas para a demonstração caber no vídeo; em produção seriam, por exemplo, 1 h deslizando a cada 5 min.
 - **Limitação conhecida:** com janela deslizante, o mesmo carrinho abandonado pode gerar alertas em janelas consecutivas. Em produção usaríamos janela de sessão ou timers por usuário (`KeyedProcessFunction`).
-
-## Problemas comuns
-
-- **Mac com chip M1/M2/M3:** as imagens de Hadoop/Hive/HBase são amd64 e rodam emuladas (`platform: linux/amd64`); funciona, só fica mais lento. Dê bastante RAM ao Docker Desktop.
-- **HDFS preso em safe mode:** `docker exec namenode hdfs dfsadmin -safemode leave`.
-- **Flume não inicia (erro com Guava/Hadoop):** veja `docker logs flume`. Se for conflito de Guava, remova o jar do Flume: `docker exec flume sh -c 'rm /opt/flume/lib/guava-*.jar'` e `docker restart flume`.
-- **Nada no HBase:** confira em `http://localhost:8081` se o job está RUNNING e se o gerador está ativo (`docker logs gerador`). Os resultados só saem quando o watermark passa do fim da janela (~2,5 min depois de iniciar).
-- **Spark diz que o caminho não existe:** o Flume monta `dt=` em UTC e fecha arquivos a cada 60 s. Confira com `docker exec namenode hdfs dfs -ls /data/raw/eventos` e passe a data: `./scripts/03_spark.sh 2026-09-26`.
-- **Pouca memória:** pare o `hive-server` enquanto roda o Spark (`docker stop hive-server`) e religue para consultar.
 
 ## Estrutura
 
