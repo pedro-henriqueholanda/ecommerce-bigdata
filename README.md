@@ -73,19 +73,6 @@ O job imprime `rdd.toDebugString()`, onde aparece o `ShuffledRDD` — evidência
 - **Janelas curtas (2–3 min):** escolhidas para a demonstração caber no vídeo; em produção seriam, por exemplo, 1 h deslizando a cada 5 min.
 - **Limitação conhecida:** com janela deslizante, o mesmo carrinho abandonado pode gerar alertas em janelas consecutivas. Em produção usaríamos janela de sessão ou timers por usuário (`KeyedProcessFunction`).
 
-## Roteiro sugerido para o vídeo (5 min)
-
-| Tempo | Conteúdo | O que mostrar na tela |
-|---|---|---|
-| 0:00–0:30 | Problema e arquitetura | Diagrama deste README |
-| 0:30–1:15 | Geração + ingestão | `tail -f data/logs/events.log`, `flume.conf` (replicating), arquivos no HDFS (UI 50070) |
-| 1:15–2:30 | Streaming | SQL do `flink_job.py` (WATERMARK e HOP), job rodando na UI 8081, `scan` no HBase |
-| 2:30–3:30 | Batch | Rodar `03_spark.sh`, apontar o `ShuffledRDD`, consulta no Hive via beeline |
-| 3:30–4:40 | Decisões e trade-offs | Flink × Spark Streaming, HBase × HDFS, Kafka, watermark |
-| 4:40–5:00 | Dificuldades e conclusão | O que deu trabalho e como resolveu |
-
-Dica: grave cada trecho separado e junte depois — é mais fácil do que acertar tudo numa tomada.
-
 ## Problemas comuns
 
 - **Mac com chip M1/M2/M3:** as imagens de Hadoop/Hive/HBase são amd64 e rodam emuladas (`platform: linux/amd64`); funciona, só fica mais lento. Dê bastante RAM ao Docker Desktop.
